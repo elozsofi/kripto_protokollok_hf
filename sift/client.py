@@ -1,0 +1,196 @@
+import socket
+import time
+import hashlib
+import os
+
+from common import send_message, recv_message
+from mtp import MTP
+from crypto_utils import load_public_key, rsa_encrypt, derive_key
+from Crypto.Random import get_random_bytes
+from upload import split_file, compute_file_hash
+
+HOST = "127.0.0.1"
+PORT = 5150
+
+USERNAME = "alice"
+PASSWORD = "aaa"
+
+
+def build_login_payload():
+    timestamp = str(time.time_ns())
+    client_random = get_random_bytes(16)
+
+    payload = (
+        timestamp + "\n" +
+        USERNAME + "\n" +
+        PASSWORD + "\n" +
+        client_random.hex()
+    ).encode()
+
+    return payload, client_random
+
+
+def start_client():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((HOST, PORT))
+        print("[+] Connected")
+
+        pubkey = load_public_key("srvpubkey.pem")
+
+        tk = get_random_bytes(32)
+        mtp = MTP(tk)
+
+        payload, client_random = build_login_payload()
+
+        encrypted_payload = mtp.encrypt(b'\x00\x00', payload)
+        etk = rsa_encrypt(pubkey, tk)
+
+        send_message(s, encrypted_payload + etk)
+
+        request_hash = hashlib.sha256(payload).hexdigest()
+
+        raw = recv_message(s)
+        typ, response_payload = mtp.decrypt(raw)
+
+        lines = response_payload.decode().split("\n")
+        received_hash = lines[0]
+        server_random = bytes.fromhex(lines[1])
+
+        if received_hash != request_hash:
+            raise Exception("Login hash mismatch")
+
+        session_key = derive_key(client_random, server_random, request_hash)
+        mtp.key = session_key
+
+        print("[+] Login successful")
+
+        while True:
+            cmd_input = input(">>> ").strip()
+            if not cmd_input:
+                continue
+
+            parts = cmd_input.split()
+            command = parts[0]
+            params = parts[1:]
+
+            # --- DOWNLOAD ---
+            if len(params) < 1:
+                print("[ERROR] Missing filename")
+                continue
+            if command == "dnl":
+                filename = params[0]
+
+                payload = f"dnl\n{filename}".encode()
+                req_hash = hashlib.sha256(payload).hexdigest()
+
+                send_message(s, mtp.encrypt(b'\x01\x00', payload))
+
+                raw = recv_message(s)
+                typ, res_payload = mtp.decrypt(raw)
+                parts = res_payload.decode().split("\n")
+
+                if parts[2] != "accept":
+                    print("[ERROR]", parts[3])
+                    continue
+
+                size = int(parts[3])
+                expected_hash = parts[4]
+
+                print(f"[+] Downloading {filename} ({size} bytes)")
+                if size > 10_000_000:
+                    send_message(s, mtp.encrypt(b'\x03\x00', b"cancel"))
+                    print("[!] Download cancelled (too large)")
+                    continue
+
+                send_message(s, mtp.encrypt(b'\x03\x00', b"ready"))
+                received = b""
+
+                while True:
+                    raw = recv_message(s)
+                    typ, chunk = mtp.decrypt(raw)
+
+                    received += chunk
+
+                    if typ == b'\x03\x11':
+                        break
+
+                with open(filename, "wb") as f:
+                    f.write(received)
+
+                h = hashlib.sha256(received).hexdigest()
+
+                if h != expected_hash:
+                    print("[ERROR] Hash mismatch")
+                else:
+                    print("[+] Download OK")
+
+                continue
+
+            # --- UPLOAD ---
+            if len(params) < 1:
+                print("[ERROR] Missing filename")
+                continue
+            if command == "upl":
+                filename = params[0]
+
+                if not os.path.exists(filename):
+                    print("[ERROR] File not found")
+                    continue
+
+                file_hash, file_size = compute_file_hash(filename)
+
+                payload = f"upl\n{filename}\n{file_size}\n{file_hash.hex()}".encode()
+                req_hash = hashlib.sha256(payload).hexdigest()
+
+                send_message(s, mtp.encrypt(b'\x01\x00', payload))
+
+                raw = recv_message(s)
+                typ, res_payload = mtp.decrypt(raw)
+                parts = res_payload.decode().split("\n")
+
+                if parts[2] != "accept":
+                    print("[ERROR]", parts[3])
+                    continue
+
+                print("[+] Upload started")
+
+                chunks = list(split_file(filename))
+
+                for i, chunk in enumerate(chunks):
+                    t = b'\x02\x01' if i == len(chunks) - 1 else b'\x02\x00'
+                    send_message(s, mtp.encrypt(t, chunk))
+
+                raw = recv_message(s)
+                typ, res_payload = mtp.decrypt(raw)
+
+                h, size = res_payload.decode().split("\n")
+
+                if h != file_hash.hex():
+                    print("[ERROR] Hash mismatch")
+                else:
+                    print("[+] Upload OK")
+
+                continue
+
+            payload = (command + "\n" + "\n".join(params) if params else command).encode()
+            req_hash = hashlib.sha256(payload).hexdigest()
+
+            send_message(s, mtp.encrypt(b'\x01\x00', payload))
+
+            raw = recv_message(s)
+            typ, res_payload = mtp.decrypt(raw)
+
+            parts = res_payload.decode().split("\n")
+
+            if parts[1] != req_hash:
+                print("[!] Hash mismatch")
+                break
+
+            if parts[2] == "success":
+                print(parts[3] if len(parts) > 3 else "OK")
+            else:
+                print("[ERROR]", parts[3])
+
+
+if __name__ == "__main__":
+    start_client()
