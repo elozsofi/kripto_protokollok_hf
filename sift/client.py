@@ -59,7 +59,8 @@ def start_client():
         if received_hash != request_hash:
             raise Exception("Login hash mismatch")
 
-        session_key = derive_key(client_random, server_random, request_hash)
+        session_key = derive_key(client_random, server_random, bytes.fromhex(request_hash))
+        #session_key = derive_key(client_random, server_random, request_hash)
         mtp.key = session_key
 
         print("[+] Login successful")
@@ -74,10 +75,13 @@ def start_client():
             params = parts[1:]
 
             # --- DOWNLOAD ---
-            if len(params) < 1:
-                print("[ERROR] Missing filename")
-                continue
+            #if len(params) < 1: # check inside the command handler eg. because of pwd command
+            #    print("[ERROR] Missing filename")
+            #    continue
             if command == "dnl":
+                if len(params) < 1:
+                    print("[ERROR] Missing filename")
+                    continue
                 filename = params[0]
 
                 payload = f"dnl\n{filename}".encode()
@@ -127,10 +131,13 @@ def start_client():
                 continue
 
             # --- UPLOAD ---
-            if len(params) < 1:
-                print("[ERROR] Missing filename")
-                continue
+            #if len(params) < 1:
+            #    print("[ERROR] Missing filename")
+            #    continue
             if command == "upl":
+                if len(params) < 1:
+                    print("[ERROR] Missing filename")
+                    continue
                 filename = params[0]
 
                 if not os.path.exists(filename):

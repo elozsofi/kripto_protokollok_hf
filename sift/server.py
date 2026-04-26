@@ -57,7 +57,9 @@ def handle_client(conn, addr):
             (request_hash + "\n" + server_random.hex()).encode()
         ))
 
-        session_key = derive_key(client_random, server_random, request_hash)
+        session_key = derive_key(client_random, server_random, bytes.fromhex(request_hash)) 
+        #session_key = derive_key(client_random, server_random, request_hash)
+
         mtp.key = session_key
         handler = CommandHandler("server_files")
 
@@ -69,11 +71,12 @@ def handle_client(conn, addr):
             req_hash = hashlib.sha256(payload).hexdigest()
 
             # DOWNLOAD
-            if len(parts) < 2:
-                resp = [cmd, req_hash, "failure", "Missing parameter"]
-                send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
-                continue
             if cmd == "dnl":
+                #inside the command handler because of pwd/lst command
+                if len(parts) < 2:
+                    resp = [cmd, req_hash, "failure", "Missing parameter"]
+                    send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                    continue
                 filename = parts[1]
                 path = os.path.join(handler.cwd, filename)
 
@@ -110,11 +113,12 @@ def handle_client(conn, addr):
                 continue
 
             # UPLOAD
-            if len(parts) < 2:
-                resp = [cmd, req_hash, "failure", "Missing parameter"]
-                send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
-                continue
             if cmd == "upl":
+                #inside the command handler because of pwd/lst command
+                if len(parts) < 2:
+                    resp = [cmd, req_hash, "failure", "Missing parameter"]
+                    send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                    continue
                 filename = parts[1]
                 size = int(parts[2])
                 expected_hash = parts[3]
@@ -159,29 +163,33 @@ def handle_client(conn, addr):
                     res = handler.lst()
                     resp = ["lst", req_hash, "success", res]
 
-                if len(parts) < 2:
-                    resp = [cmd, req_hash, "failure", "Missing parameter"]
-                    send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
-                    continue
+                
                 elif cmd == "chd":
-                    handler.chd(parts[1])
-                    resp = ["chd", req_hash, "success"]
+                    if len(parts) < 2:
+                        resp = [cmd, req_hash, "failure", "Missing parameter"]
+                        send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                        continue
+                    else:
+                        handler.chd(parts[1])
+                        resp = ["chd", req_hash, "success"]
 
-                if len(parts) < 2:
-                    resp = [cmd, req_hash, "failure", "Missing parameter"]
-                    send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
-                    continue
                 elif cmd == "mkd":
-                    handler.mkd(parts[1])
-                    resp = ["mkd", req_hash, "success"]
+                    if len(parts) < 2:
+                        resp = [cmd, req_hash, "failure", "Missing parameter"]
+                        send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                        continue
+                    else:   
+                        handler.mkd(parts[1])
+                        resp = ["mkd", req_hash, "success"]
 
-                if len(parts) < 2:
-                    resp = [cmd, req_hash, "failure", "Missing parameter"]
-                    send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
-                    continue
                 elif cmd == "del":
-                    handler.delete(parts[1])
-                    resp = ["del", req_hash, "success"]
+                    if len(parts) < 2:
+                        resp = [cmd, req_hash, "failure", "Missing parameter"]
+                        send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                        continue
+                    else:
+                        handler.delete(parts[1])
+                        resp = ["del", req_hash, "success"]
 
                 else:
                     resp = [cmd, req_hash, "failure", "Unknown command"]
