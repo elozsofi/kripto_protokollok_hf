@@ -35,6 +35,8 @@ def start_client():
         s.connect((HOST, PORT))
         print("[+] Connected")
 
+        #necessary if the teachers server is used, otherwise the public key of the local server can be used
+        #pubkey = load_public_key("teacher_srvpubkey.pem") 
         pubkey = load_public_key("srvpubkey.pem")
 
         tk = get_random_bytes(32)
