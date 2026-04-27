@@ -9,6 +9,8 @@ from crypto_utils import load_private_key, rsa_decrypt, derive_key
 from Crypto.Random import get_random_bytes
 from commands import CommandHandler
 from crypto_utils import hash_password
+from auth import verify_login_timestamp, authenticate_user, build_login_response, derive_session_key
+from protocol import parse_login_payload, LOGIN_RES, COMMAND_RES, UPLOAD_DATA, UPLOAD_LAST, UPLOAD_RESP, DOWNLOAD_CTRL, DOWNLOAD_DATA, DOWNLOAD_LAST
 
 HOST = "0.0.0.0"
 PORT = 5150
@@ -20,10 +22,6 @@ USERS = {
     }
 }
 FRAGMENT_SIZE = 1024
-
-def parse_login_payload(payload: bytes):
-    lines = payload.decode().split("\n")
-    return int(lines[0]), lines[1], lines[2], bytes.fromhex(lines[3])
 
 def handle_client(conn, addr):
     print(f"[+] Client connected: {addr}")
@@ -38,26 +36,19 @@ def handle_client(conn, addr):
         typ, payload = mtp.decrypt(encrypted_part)
         
         timestamp, username, password, client_random = parse_login_payload(payload)
-        now = time.time_ns()
-        if abs(now - timestamp) > 1_000_000_000:
-            raise Exception("Timestamp too old")
-                
-        user = USERS.get(username)
-        if not user:
-            raise Exception("Auth failed")
-        computed_hash = hash_password(password, user["salt"])
-        if computed_hash != user["hash"]:
-            raise Exception("Auth failed")
+        
+        verify_login_timestamp(timestamp)
+        authenticate_user(username, password, USERS)
 
         request_hash = hashlib.sha256(payload).hexdigest()
         server_random = get_random_bytes(16)
 
         send_message(conn, mtp.encrypt(
             b'\x00\x10',
-            (request_hash + "\n" + server_random.hex()).encode()
+            build_login_response(request_hash, server_random)
         ))
 
-        session_key = derive_key(client_random, server_random, bytes.fromhex(request_hash)) 
+        session_key = derive_session_key(client_random, server_random, request_hash)
         #session_key = derive_key(client_random, server_random, request_hash)
 
         mtp.key = session_key
@@ -107,7 +98,7 @@ def handle_client(conn, addr):
 
                 for i in range(0, len(data), FRAGMENT_SIZE):
                     chunk = data[i:i+FRAGMENT_SIZE]
-                    t = b'\x03\x11' if i + FRAGMENT_SIZE >= len(data) else b'\x03\x10'
+                    t = DOWNLOAD_LAST if i + FRAGMENT_SIZE >= len(data) else DOWNLOAD_DATA
                     send_message(conn, mtp.encrypt(t, chunk))
 
                 continue
@@ -117,7 +108,7 @@ def handle_client(conn, addr):
                 #inside the command handler because of pwd/lst command
                 if len(parts) < 2:
                     resp = [cmd, req_hash, "failure", "Missing parameter"]
-                    send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                    send_message(conn, mtp.encrypt(COMMAND_RES, "\n".join(resp).encode()))
                     continue
                 filename = parts[1]
                 size = int(parts[2])
@@ -126,7 +117,7 @@ def handle_client(conn, addr):
                 path = os.path.join(handler.cwd, filename)
 
                 send_message(conn, mtp.encrypt(
-                    b'\x01\x10',
+                    COMMAND_RES,
                     f"upl\n{req_hash}\naccept".encode()
                 ))
 
@@ -138,7 +129,7 @@ def handle_client(conn, addr):
 
                     received += chunk
 
-                    if typ == b'\x02\x01':
+                    if typ == UPLOAD_LAST:
                         break
 
                 with open(path, "wb") as f:
@@ -147,7 +138,7 @@ def handle_client(conn, addr):
                 h = hashlib.sha256(received).hexdigest()
 
                 send_message(conn, mtp.encrypt(
-                    b'\x02\x10',
+                    UPLOAD_RESP,
                     f"{h}\n{len(received)}".encode()
                 ))
 
@@ -167,7 +158,7 @@ def handle_client(conn, addr):
                 elif cmd == "chd":
                     if len(parts) < 2:
                         resp = [cmd, req_hash, "failure", "Missing parameter"]
-                        send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                        send_message(conn, mtp.encrypt(COMMAND_RES, "\n".join(resp).encode()))
                         continue
                     else:
                         handler.chd(parts[1])
@@ -176,7 +167,7 @@ def handle_client(conn, addr):
                 elif cmd == "mkd":
                     if len(parts) < 2:
                         resp = [cmd, req_hash, "failure", "Missing parameter"]
-                        send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                        send_message(conn, mtp.encrypt(COMMAND_RES, "\n".join(resp).encode()))
                         continue
                     else:   
                         handler.mkd(parts[1])
@@ -185,7 +176,7 @@ def handle_client(conn, addr):
                 elif cmd == "del":
                     if len(parts) < 2:
                         resp = [cmd, req_hash, "failure", "Missing parameter"]
-                        send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
+                        send_message(conn, mtp.encrypt(COMMAND_RES, "\n".join(resp).encode()))
                         continue
                     else:
                         handler.delete(parts[1])
@@ -198,7 +189,7 @@ def handle_client(conn, addr):
                 resp = [cmd, req_hash, "failure", str(e)]
 
             send_message(conn, mtp.encrypt(
-                b'\x01\x10',
+                COMMAND_RES,
                 "\n".join(resp).encode()
             ))
 

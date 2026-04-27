@@ -7,28 +7,27 @@ from common import send_message, recv_message
 from mtp import MTP
 from crypto_utils import load_public_key, rsa_encrypt, derive_key
 from Crypto.Random import get_random_bytes
-from upload import split_file, compute_file_hash
+from files import split_file, compute_file_hash
+from protocol import (
+    LOGIN_REQ,
+    COMMAND_REQ,
+    UPLOAD_DATA,
+    UPLOAD_LAST,
+    DOWNLOAD_DATA,
+    DOWNLOAD_LAST,
+    DOWNLOAD_CTRL,
+    build_login_payload,
+    build_command_payload,
+    build_download_request,
+    build_upload_request,
+    derive_session_key
+    )
 
 HOST = "127.0.0.1"
 PORT = 5150
 
 USERNAME = "alice"
 PASSWORD = "aaa"
-
-
-def build_login_payload():
-    timestamp = str(time.time_ns())
-    client_random = get_random_bytes(16)
-
-    payload = (
-        timestamp + "\n" +
-        USERNAME + "\n" +
-        PASSWORD + "\n" +
-        client_random.hex()
-    ).encode()
-
-    return payload, client_random
-
 
 def start_client():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -42,9 +41,9 @@ def start_client():
         tk = get_random_bytes(32)
         mtp = MTP(tk)
 
-        payload, client_random = build_login_payload()
+        payload, client_random = build_login_payload(USERNAME, PASSWORD)
 
-        encrypted_payload = mtp.encrypt(b'\x00\x00', payload)
+        encrypted_payload = mtp.encrypt(LOGIN_REQ, payload)
         etk = rsa_encrypt(pubkey, tk)
 
         send_message(s, encrypted_payload + etk)
@@ -61,7 +60,7 @@ def start_client():
         if received_hash != request_hash:
             raise Exception("Login hash mismatch")
 
-        session_key = derive_key(client_random, server_random, bytes.fromhex(request_hash))
+        session_key = derive_session_key(client_random, server_random, request_hash)
         #session_key = derive_key(client_random, server_random, request_hash)
         mtp.key = session_key
 
@@ -77,19 +76,16 @@ def start_client():
             params = parts[1:]
 
             # --- DOWNLOAD ---
-            #if len(params) < 1: # check inside the command handler eg. because of pwd command
-            #    print("[ERROR] Missing filename")
-            #    continue
             if command == "dnl":
                 if len(params) < 1:
                     print("[ERROR] Missing filename")
                     continue
                 filename = params[0]
 
-                payload = f"dnl\n{filename}".encode()
+                payload = build_download_request(filename)
                 req_hash = hashlib.sha256(payload).hexdigest()
 
-                send_message(s, mtp.encrypt(b'\x01\x00', payload))
+                send_message(s, mtp.encrypt(COMMAND_REQ, payload))
 
                 raw = recv_message(s)
                 typ, res_payload = mtp.decrypt(raw)
@@ -104,11 +100,11 @@ def start_client():
 
                 print(f"[+] Downloading {filename} ({size} bytes)")
                 if size > 10_000_000:
-                    send_message(s, mtp.encrypt(b'\x03\x00', b"cancel"))
+                    send_message(s, mtp.encrypt(DOWNLOAD_CTRL, b"cancel"))
                     print("[!] Download cancelled (too large)")
                     continue
 
-                send_message(s, mtp.encrypt(b'\x03\x00', b"ready"))
+                send_message(s, mtp.encrypt(DOWNLOAD_CTRL, b"ready"))
                 received = b""
 
                 while True:
@@ -117,7 +113,7 @@ def start_client():
 
                     received += chunk
 
-                    if typ == b'\x03\x11':
+                    if typ == DOWNLOAD_LAST:
                         break
 
                 with open(filename, "wb") as f:
@@ -133,9 +129,6 @@ def start_client():
                 continue
 
             # --- UPLOAD ---
-            #if len(params) < 1:
-            #    print("[ERROR] Missing filename")
-            #    continue
             if command == "upl":
                 if len(params) < 1:
                     print("[ERROR] Missing filename")
@@ -148,10 +141,10 @@ def start_client():
 
                 file_hash, file_size = compute_file_hash(filename)
 
-                payload = f"upl\n{filename}\n{file_size}\n{file_hash.hex()}".encode()
+                payload = build_upload_request(filename, file_size, file_hash.hex())
                 req_hash = hashlib.sha256(payload).hexdigest()
 
-                send_message(s, mtp.encrypt(b'\x01\x00', payload))
+                send_message(s, mtp.encrypt(COMMAND_REQ, payload))
 
                 raw = recv_message(s)
                 typ, res_payload = mtp.decrypt(raw)
@@ -166,7 +159,7 @@ def start_client():
                 chunks = list(split_file(filename))
 
                 for i, chunk in enumerate(chunks):
-                    t = b'\x02\x01' if i == len(chunks) - 1 else b'\x02\x00'
+                    t = UPLOAD_LAST if i == len(chunks) - 1 else UPLOAD_DATA
                     send_message(s, mtp.encrypt(t, chunk))
 
                 raw = recv_message(s)
@@ -181,10 +174,10 @@ def start_client():
 
                 continue
 
-            payload = (command + "\n" + "\n".join(params) if params else command).encode()
+            payload = build_command_payload(command, params)
             req_hash = hashlib.sha256(payload).hexdigest()
 
-            send_message(s, mtp.encrypt(b'\x01\x00', payload))
+            send_message(s, mtp.encrypt(COMMAND_REQ, payload))
 
             raw = recv_message(s)
             typ, res_payload = mtp.decrypt(raw)
