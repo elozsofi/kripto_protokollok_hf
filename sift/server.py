@@ -65,11 +65,11 @@ def handle_client(conn, addr):
             if cmd == "dnl":
                 #inside the command handler because of pwd/lst command
                 if len(parts) < 2:
-                    resp = [cmd, req_hash, "failure", "Missing parameter"]
+                    resp = [cmd, req_hash, "reject", "Missing parameter"]
                     send_message(conn, mtp.encrypt(b'\x01\x10', "\n".join(resp).encode()))
                     continue
                 filename = parts[1]
-                path = os.path.join(handler.cwd, filename)
+                path = handler._safe_path(filename)
 
                 if not os.path.exists(path):
                     send_message(conn, mtp.encrypt(
@@ -106,15 +106,15 @@ def handle_client(conn, addr):
             # UPLOAD
             if cmd == "upl":
                 #inside the command handler because of pwd/lst command
-                if len(parts) < 2:
-                    resp = [cmd, req_hash, "failure", "Missing parameter"]
+                if len(parts) < 4:
+                    resp = [cmd, req_hash, "reject", "Missing parameter"]
                     send_message(conn, mtp.encrypt(COMMAND_RES, "\n".join(resp).encode()))
                     continue
                 filename = parts[1]
                 size = int(parts[2])
                 expected_hash = parts[3]
 
-                path = os.path.join(handler.cwd, filename)
+                path = handler._safe_path(filename)
 
                 send_message(conn, mtp.encrypt(
                     COMMAND_RES,
