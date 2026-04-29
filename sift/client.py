@@ -43,7 +43,7 @@ def start_client():
         print("[LOG] Generating temporary key and MTP")
         tk = get_random_bytes(32)
         mtp = MTP(tk)
-
+        print(f"temporary key: {tk}")
         print("[LOG] Building login payload")
         payload, client_random = build_login_payload(USERNAME, PASSWORD)
         print(f"[LOG] Client random: {client_random.hex()}")
@@ -55,9 +55,19 @@ def start_client():
         print("[LOG] Encrypting temporary key with RSA")
         etk = rsa_encrypt(pubkey, tk)
         print(f"[LOG] Encrypted key length: {len(etk)}")
+        if len(etk) != 256:
+            raise Exception(f"RSA-encrypted temporary key has invalid length: {len(etk)}")
 
-        print("[LOG] Sending login message")
+        total_length = len(encrypted_payload) + len(etk)
+        print(f"[LOG] Total login message length: {total_length}")
+        print(f"[LOG] Login header bytes: {encrypted_payload[:16].hex()}")
+        print(f"[LOG] Login payload tail bytes: {encrypted_payload[-16:].hex()}")
+
+        print("\n[LOG] Sending login message\n")
         send_message(s, encrypted_payload + etk)
+        print(f"\n\npayload: {encrypted_payload}\n\netk: {etk}")
+        print("\n\nhex payload:", encrypted_payload.hex())
+        print("\n\nhex etk:", etk.hex())
 
         print("[LOG] Computing request hash")
         request_hash = hashlib.sha256(payload).hexdigest()

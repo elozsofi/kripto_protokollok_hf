@@ -4,7 +4,7 @@ import struct
 
 def send_message(sock: socket.socket, data: bytes):
     sock.sendall(data)
-    print(f"[COMMON SEND] len={len(data)}")
+    print(f"[COMMON SEND] payload_len={len(data)}")
 
 def recv_exact(sock: socket.socket, n: int) -> bytes:
     data = b""
@@ -23,5 +23,5 @@ def recv_message(sock: socket.socket) -> bytes:
     if length < 16:
         raise ValueError("Invalid message length")
     body = recv_exact(sock, length - 16)
-    print(f"[COMMON RECV] header={header.hex()} length={length}")
+    print(f"[COMMON RECV] payload_len={length} header={header.hex()}")
     return header + body
