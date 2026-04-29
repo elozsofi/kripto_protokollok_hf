@@ -28,26 +28,42 @@ class MTP:
         header = self._build_header(typ, 0, sqn, rnd)
         cipher.update(header)
         ciphertext, tag = cipher.encrypt_and_digest(payload)
-        length = 16 + len(ciphertext) + 12
-        header = self._build_header(typ, length, sqn, rnd)
-        cipher = AES.new(self.key, AES.MODE_GCM, nonce=nonce, mac_len=12)
-        cipher.update(header)
-        ciphertext, tag = cipher.encrypt_and_digest(payload)
-        self.send_sqn += 1
-        return header + ciphertext + tag
+        if typ == b'\x00\x00':
+            length = 16 + len(ciphertext)
+            header = self._build_header(typ, length, sqn, rnd)
+            message = header + ciphertext
+            print(f"[MTP ENCRYPT] typ={typ.hex()} length={length} sqn={sqn} rnd={rnd.hex()} header={header.hex()} payload_len={len(payload)} message_len={len(message)}")
+            self.send_sqn += 1
+            return message
+        else:
+            length = 16 + len(ciphertext) + 12
+            header = self._build_header(typ, length, sqn, rnd)
+            cipher = AES.new(self.key, AES.MODE_GCM, nonce=nonce, mac_len=12)
+            cipher.update(header)
+            ciphertext, tag = cipher.encrypt_and_digest(payload)
+            message = header + ciphertext + tag
+            print(f"[MTP ENCRYPT] typ={typ.hex()} length={length} sqn={sqn} rnd={rnd.hex()} header={header.hex()} payload_len={len(payload)} ciphertext_len={len(ciphertext)} tag={tag.hex()} message_len={len(message)}")
+            self.send_sqn += 1
+            return message
 
     def decrypt(self, message: bytes):
         if len(message) < 28:
             raise ValueError("Message too short")
 
         header = message[:16]
-        tag = message[-12:]
-        ciphertext = message[16:-12]
-        ver = header[:2]
         typ = header[2:4]
+        if typ == b'\x00\x00':
+            ciphertext = message[16:]
+            tag = b''
+        else:
+            tag = message[-12:]
+            ciphertext = message[16:-12]
+        ver = header[:2]
         length = struct.unpack(">H", header[4:6])[0]
         sqn = struct.unpack(">H", header[6:8])[0]
         rnd = header[8:14]
+
+        print(f"[MTP DECRYPT] raw_len={len(message)} typ={typ.hex()} ver={ver.hex()} length={length} sqn={sqn} rnd={rnd.hex()} header={header.hex()} ciphertext_len={len(ciphertext)} tag_len={len(tag)}")
 
         if ver != VERSION:
             raise ValueError("Invalid version")
@@ -61,7 +77,11 @@ class MTP:
         nonce = struct.pack(">H", sqn) + rnd
         cipher = AES.new(self.key, AES.MODE_GCM, nonce=nonce, mac_len=12)
         cipher.update(header)
-        payload = cipher.decrypt_and_verify(ciphertext, tag)
+        if typ == b'\x00\x00':
+            payload = cipher.decrypt(ciphertext)
+        else:
+            payload = cipher.decrypt_and_verify(ciphertext, tag)
         self.recv_sqn = sqn
 
+        print(f"[MTP DECRYPT] payload_len={len(payload)}")
         return typ, payload

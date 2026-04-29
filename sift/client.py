@@ -23,46 +23,70 @@ from protocol import (
     derive_session_key
     )
 
-HOST = "127.0.0.1"
+HOST = "192.168.1.119"
 PORT = 5150
 
 USERNAME = "alice"
 PASSWORD = "aaa"
 
 def start_client():
+    print("[LOG] Starting client")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        print(f"[LOG] Connecting to {HOST}:{PORT}")
         s.connect((HOST, PORT))
         print("[+] Connected")
 
-        #necessary if the teachers server is used, otherwise the public key of the local server can be used
-        #pubkey = load_public_key("teacher_srvpubkey.pem") 
-        pubkey = load_public_key("srvpubkey.pem")
+        print("[LOG] Loading public key")
+        pubkey = load_public_key("teacher_srvpubkey.pem") 
+        #pubkey = load_public_key("srvpubkey.pem")
 
+        print("[LOG] Generating temporary key and MTP")
         tk = get_random_bytes(32)
         mtp = MTP(tk)
 
+        print("[LOG] Building login payload")
         payload, client_random = build_login_payload(USERNAME, PASSWORD)
+        print(f"[LOG] Client random: {client_random.hex()}")
 
+        print("[LOG] Encrypting login payload with MTP")
         encrypted_payload = mtp.encrypt(LOGIN_REQ, payload)
-        etk = rsa_encrypt(pubkey, tk)
+        print(f"[LOG] Encrypted payload length: {len(encrypted_payload)}")
 
+        print("[LOG] Encrypting temporary key with RSA")
+        etk = rsa_encrypt(pubkey, tk)
+        print(f"[LOG] Encrypted key length: {len(etk)}")
+
+        print("[LOG] Sending login message")
         send_message(s, encrypted_payload + etk)
 
+        print("[LOG] Computing request hash")
         request_hash = hashlib.sha256(payload).hexdigest()
+        print(f"[LOG] Request hash: {request_hash}")
 
+        print("[LOG] Receiving login response")
         raw = recv_message(s)
-        typ, response_payload = mtp.decrypt(raw)
+        print(f"[LOG] Received message length: {len(raw)}")
 
+        print("[LOG] Decrypting response with MTP")
+        typ, response_payload = mtp.decrypt(raw)
+        print(f"[LOG] Response type: {typ.hex()}, payload length: {len(response_payload)}")
+
+        print("[LOG] Parsing response")
         lines = response_payload.decode().split("\n")
         received_hash = lines[0]
         server_random = bytes.fromhex(lines[1])
+        print(f"[LOG] Received hash: {received_hash}")
+        print(f"[LOG] Server random: {server_random.hex()}")
 
         if received_hash != request_hash:
+            print("[ERROR] Login hash mismatch")
             raise Exception("Login hash mismatch")
 
+        print("[LOG] Deriving session key")
         session_key = derive_session_key(client_random, server_random, request_hash)
         #session_key = derive_key(client_random, server_random, request_hash)
         mtp.key = session_key
+        print(f"[LOG] Session key set")
 
         print("[+] Login successful")
 
