@@ -15,12 +15,19 @@ class CommandHandler:
 
     def pwd(self):
         rel = os.path.relpath(self.cwd, self.root)
-        return rel if rel != "." else "/"
+        #return rel if rel != "." else "/"
+        return "/" if rel == "." else "/" + rel
 
     def lst(self):
         items = os.listdir(self.cwd)
-        joined = "\n".join(items)
-        return base64.b64encode(joined.encode()).decode()
+        #joined = "\n".join(items)
+        #return base64.b64encode(joined.encode()).decode()
+        #return "\n".join(items)
+        out = []
+        for name in sorted(items):
+            full = os.path.join(self.cwd, name)
+            out.append(name + ("/" if os.path.isdir(full) else ""))
+        return "\n".join(out)
 
     def chd(self, dirname):
         new_path = self._safe_path(dirname)
