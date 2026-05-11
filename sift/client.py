@@ -224,7 +224,10 @@ def start_client():
                 break
 
             if parts[2] == "success":
-                print(parts[3] if len(parts) > 3 else "OK")
+                if len(parts) > 3:
+                    print("\n".join(parts[3:]))
+                else:
+                    print("OK")
             else:
                 print("[ERROR]", parts[3])
 
