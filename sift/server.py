@@ -14,6 +14,7 @@ from protocol import parse_login_payload, LOGIN_RES, COMMAND_RES, UPLOAD_DATA, U
 
 HOST = "0.0.0.0"
 PORT = 5150
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 USERS = {
     "alice": {
@@ -30,7 +31,9 @@ def handle_client(conn, addr):
         raw = recv_message(conn)
         #encrypted_part = raw[:-256]
         etk = raw[-256:]
-        privkey = load_private_key("srvkey.pem")
+        #privkey = load_private_key("srvkey.pem")
+        privkey = load_private_key(os.path.join(BASE_DIR, "srvkey.pem"))
+
         tk = rsa_decrypt(privkey, etk)
         mtp = MTP(tk)
         #typ, payload = mtp.decrypt(encrypted_part)

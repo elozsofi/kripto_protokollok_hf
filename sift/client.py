@@ -40,6 +40,7 @@ def start_client():
         print("[LOG] Loading public key")
         #pubkey = load_public_key("teacher_srvpubkey.pem") 
         pubkey = load_public_key(os.path.join(BASE_DIR, "srvpubkey.pem"))
+        #pubkey = load_public_key("srvpubkey.pem") 
 
         print("[LOG] Generating temporary key and MTP")
         tk = get_random_bytes(32)
