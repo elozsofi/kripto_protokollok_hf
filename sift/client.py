@@ -23,8 +23,9 @@ from protocol import (
     derive_session_key
     )
 
-HOST = "192.168.1.119"
+HOST = "127.0.0.1" # 192.168.1.119
 PORT = 5150
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 USERNAME = "alice"
 PASSWORD = "aaa"
@@ -37,8 +38,8 @@ def start_client():
         print("[+] Connected")
 
         print("[LOG] Loading public key")
-        pubkey = load_public_key("teacher_srvpubkey.pem") 
-        #pubkey = load_public_key("srvpubkey.pem")
+        #pubkey = load_public_key("teacher_srvpubkey.pem") 
+        pubkey = load_public_key(os.path.join(BASE_DIR, "srvpubkey.pem"))
 
         print("[LOG] Generating temporary key and MTP")
         tk = get_random_bytes(32)

@@ -46,18 +46,20 @@ class MTP:
             self.send_sqn += 1
             return message
 
-    def decrypt(self, message: bytes):
-        if len(message) < 28:
+    def decrypt(self, message: bytes, trailer_len: int = 0):
+        min_len = 16 + 12 + trailer_len
+        if len(message) < min_len:
             raise ValueError("Message too short")
 
         header = message[:16]
         typ = header[2:4]
-        tag = message[-12:]
-        ciphertext = message[16:-12]
         ver = header[:2]
         length = struct.unpack(">H", header[4:6])[0]
         sqn = struct.unpack(">H", header[6:8])[0]
         rnd = header[8:14]
+        body_end = len(message) - trailer_len
+        tag = message[body_end - 12:body_end]
+        ciphertext = message[16:body_end - 12]
 
         print(f"[MTP DECRYPT] raw_len={len(message)} typ={typ.hex()} ver={ver.hex()} length={length} sqn={sqn} rnd={rnd.hex()} header={header.hex()} ciphertext_len={len(ciphertext)} tag_len={len(tag)}")
 

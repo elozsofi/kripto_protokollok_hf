@@ -28,12 +28,13 @@ def handle_client(conn, addr):
 
     try:
         raw = recv_message(conn)
-        encrypted_part = raw[:-256]
+        #encrypted_part = raw[:-256]
         etk = raw[-256:]
         privkey = load_private_key("srvkey.pem")
         tk = rsa_decrypt(privkey, etk)
         mtp = MTP(tk)
-        typ, payload = mtp.decrypt(encrypted_part)
+        #typ, payload = mtp.decrypt(encrypted_part)
+        typ, payload = mtp.decrypt(raw, trailer_len=256)
         
         timestamp, username, password, client_random = parse_login_payload(payload)
         
