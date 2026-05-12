@@ -27,7 +27,8 @@ class CommandHandler:
         for name in sorted(items):
             full = os.path.join(self.cwd, name)
             out.append(name + ("/" if os.path.isdir(full) else ""))
-        return "\n".join(out)
+        listing = "\n".join(out)
+        return base64.b64encode(listing.encode()).decode()
 
     def chd(self, dirname):
         new_path = self._safe_path(dirname)

@@ -2,6 +2,7 @@ import socket
 import time
 import hashlib
 import os
+import base64
 
 from common import send_message, recv_message
 from mtp import MTP
@@ -32,11 +33,16 @@ PASSWORD = "aaa"
 
 def start_client():
     print("[LOG] Starting client")
+
+    os.chdir(BASE_DIR) # upload/download miatt
+    print(f"[LOG] Changed to directory: {os.getcwd()}")
+    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         print(f"[LOG] Connecting to {HOST}:{PORT}")
         s.connect((HOST, PORT))
         print("[+] Connected")
 
+        # LOGIN
         print("[LOG] Loading public key")
         #pubkey = load_public_key("teacher_srvpubkey.pem") 
         pubkey = load_public_key(os.path.join(BASE_DIR, "srvpubkey.pem"))
@@ -46,6 +52,7 @@ def start_client():
         tk = get_random_bytes(32)
         mtp = MTP(tk)
         print(f"temporary key: {tk}")
+
         print("[LOG] Building login payload")
         payload, client_random = build_login_payload(USERNAME, PASSWORD)
         print(f"[LOG] Client random: {client_random.hex()}")
@@ -65,6 +72,7 @@ def start_client():
         print(f"[LOG] Login header bytes: {encrypted_payload[:16].hex()}")
         print(f"[LOG] Login payload tail bytes: {encrypted_payload[-16:].hex()}")
 
+        # Send login request message
         print("\n[LOG] Sending login message\n")
         send_message(s, encrypted_payload + etk)
         print(f"\n\npayload: {encrypted_payload}\n\netk: {etk}")
@@ -94,6 +102,7 @@ def start_client():
             print("[ERROR] Login hash mismatch")
             raise Exception("Login hash mismatch")
 
+        # Creating session key from client random, server random
         print("[LOG] Deriving session key")
         session_key = derive_session_key(client_random, server_random, request_hash)
         #session_key = derive_key(client_random, server_random, request_hash)
@@ -226,7 +235,12 @@ def start_client():
 
             if parts[2] == "success":
                 if len(parts) > 3:
-                    print("\n".join(parts[3:]))
+                    if command == "lst":
+                        # Base64-decode the listing
+                        decoded = base64.b64decode(parts[3]).decode()
+                        print(decoded)
+                    else:
+                        print("\n".join(parts[3:]))
                 else:
                     print("OK")
             else:

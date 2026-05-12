@@ -15,6 +15,7 @@ from protocol import parse_login_payload, LOGIN_RES, COMMAND_RES, UPLOAD_DATA, U
 HOST = "0.0.0.0"
 PORT = 5150
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVER_FILES_DIR = os.path.join(BASE_DIR, "server_files")
 
 USERS = {
     "alice": {
@@ -28,13 +29,18 @@ def handle_client(conn, addr):
     print(f"[+] Client connected: {addr}")
 
     try:
+        # Receive login request message 
         raw = recv_message(conn)
         #encrypted_part = raw[:-256]
+
+        # Get temporary key (last 256 bytes)
         etk = raw[-256:]
         #privkey = load_private_key("srvkey.pem")
         privkey = load_private_key(os.path.join(BASE_DIR, "srvkey.pem"))
 
+        print(f"Received login message: {raw.hex()}")
         tk = rsa_decrypt(privkey, etk)
+        print(f"Decrypted temporary key: {tk.hex()}")
         mtp = MTP(tk)
         #typ, payload = mtp.decrypt(encrypted_part)
         typ, payload = mtp.decrypt(raw, trailer_len=256)
@@ -56,7 +62,8 @@ def handle_client(conn, addr):
         #session_key = derive_key(client_random, server_random, request_hash)
 
         mtp.key = session_key
-        handler = CommandHandler("server_files")
+        #handler = CommandHandler("server_files")
+        handler = CommandHandler(SERVER_FILES_DIR)
 
         while True:
             raw = recv_message(conn)
@@ -205,7 +212,8 @@ def handle_client(conn, addr):
         conn.close()
 
 def start_server():
-    os.makedirs("server_files", exist_ok=True)
+    #os.makedirs("server_files", exist_ok=True)
+    os.makedirs(SERVER_FILES_DIR, exist_ok=True)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen()
